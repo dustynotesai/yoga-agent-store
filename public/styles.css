@@ -4,6 +4,10 @@
   --ink: #28362d;
   --muted: #6c7068;
   --accent: #304d3c;
+  /* Small creator accents from the DustyNotes ivory / ink / bronze palette. */
+  --dustynotes-bronze: #96734f;
+  --dustynotes-bronze-text: #80603f;
+  --dustynotes-ivory: #f7f4ed;
   --line: #dedfd5;
   --soft: #eef0e8;
   --serif: Georgia, 'Noto Serif TC', 'PMingLiU', serif;
@@ -246,7 +250,7 @@ a:hover {
 .tiny-line {
   width: 28px;
   height: 1px;
-  background: var(--accent);
+  background: var(--dustynotes-bronze);
 }
 .hero h1 {
   font-family: var(--serif);
@@ -396,7 +400,7 @@ a:hover {
   margin-bottom: -1px;
 }
 .collection-tabs nav a[aria-current] {
-  border-color: var(--accent);
+  border-color: var(--dustynotes-bronze);
   font-weight: 600;
 }
 .collection-tabs nav span {
@@ -686,7 +690,7 @@ a:hover {
   stroke-width: 0.6;
 }
 .foot {
-  background: #f0f0e8;
+  background: var(--dustynotes-ivory);
   padding: 45px max(56px, calc((100vw - 1264px) / 2)) 22px;
   border-top: 1px solid var(--line);
 }
@@ -711,10 +715,20 @@ a:hover {
   letter-spacing: 0.02em;
   color: var(--muted);
 }
+.creator-credit::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  background: var(--dustynotes-bronze);
+}
 .creator-credit span:first-child,
 .creator-name {
-  color: var(--accent);
+  color: var(--dustynotes-bronze-text);
   font-weight: 500;
+}
+.creator-credit span:last-child {
+  color: var(--dustynotes-bronze);
 }
 .creator-credit:hover,
 .creator-name:hover {
