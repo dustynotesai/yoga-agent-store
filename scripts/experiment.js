@@ -2,7 +2,7 @@
 //
 //   npm run experiment -- --door agent --runs 10 --orders original,reversed,random      （B3）
 //   npm run experiment -- --door agent --runs 10 --label sponsored                       （B4，先改 products.json）
-//   npm run experiment -- --door human --runs 5                                          （B2 人類門）
+//   npm run experiment -- --door human --runs 5                                          （B2 人類門，每一次都錄影；--no-video 不錄，--clicks-only 只能點）
 //   npm run experiment -- --door agent --runs 5 --label b2-agent                         （B2 agent 門）
 //
 // ⚠️ 每一次的 agent 都被關在一個空資料夾裡：
@@ -13,7 +13,7 @@
 //
 // 結果：experiments/runs/<時間>-<label>/ 每一次一份 transcript（stream-json）＋ summary.json；
 //       logs/orders.jsonl 一筆訂單一行，帶 run_tag。
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,12 +38,31 @@ fs.mkdirSync(outDir, { recursive: true });
 
 // 空的工作目錄＋只有一個 MCP 的設定檔
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'yoga-agent-'));
-const mcpConfig = door === 'agent'
-  ? { mcpServers: { 'yoga-store': { command: 'node', args: [p('src', 'mcp.js')], env: { STORE_URL: 'http://localhost:4242' } } } }
-  : { mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest', '--isolated'] } } };
-const mcpFile = path.join(sandbox, 'mcp.json');
-fs.writeFileSync(mcpFile, JSON.stringify(mcpConfig, null, 2));
+const video = !args.includes('--no-video');
+const clicksOnly = args.includes('--clicks-only');   // 關掉 browser_evaluate / run_code：agent 只能點、只能讀畫面
+const fwd = x => x.split(path.sep).join('/');
+// 人類門：每一次各自一份 Playwright 設定，影片錄到 <outDir>/<tag>-video/
+function mcpConfigFor(tag, { preview = false } = {}) {
+  if (door === 'agent') return { mcpServers: { 'yoga-store': { command: 'node', args: [fwd(p('src', 'mcp.js'))], env: { STORE_URL: 'http://localhost:4242' } } } };
+  const pw = { browser: { isolated: true, contextOptions: { viewport: { width: 1280, height: 800 } } } };
+  if (video) {
+    const dir = path.join(outDir, `${tag}-video`);
+    if (!preview) fs.mkdirSync(dir, { recursive: true });
+    pw.browser.contextOptions.recordVideo = { dir: fwd(dir), size: { width: 1280, height: 800 } };
+  }
+  const pwFile = path.join(sandbox, `${tag}.playwright.json`);
+  if (preview) return { mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest', '--config', '<每一次各自一份>'] } }, playwright: pw };
+  fs.writeFileSync(pwFile, JSON.stringify(pw, null, 2));
+  return { mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest', '--config', fwd(pwFile)] } } };
+}
+function writeMcp(tag) {
+  const f = path.join(sandbox, `${tag}.mcp.json`);
+  fs.writeFileSync(f, JSON.stringify(mcpConfigFor(tag), null, 2));
+  return f;
+}
+const mcpConfig = mcpConfigFor('<tag>', { preview: true });
 const allowed = door === 'agent' ? 'mcp__yoga-store__*' : 'mcp__playwright__*';
+const disallowed = door === 'human' && clicksOnly ? ['mcp__playwright__browser_evaluate', 'mcp__playwright__browser_run_code_unsafe', 'mcp__playwright__browser_network_request'] : [];
 
 const readOrders = () => fs.existsSync(FILES.ordersLog) ? fs.readFileSync(FILES.ordersLog, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)) : [];
 const setGate = (k, v) => { const g = gates(); g[k] = v; writeJson(FILES.gates, g); };
@@ -51,7 +70,9 @@ const reset = () => fetch('http://localhost:4242/admin/reset', { method: 'POST' 
 
 function runClaude(tag) {
   return new Promise(resolve => {
+    const mcpFile = writeMcp(tag);
     const a = ['-p', TASK, '--setting-sources', '""', '--tools', '""', '--strict-mcp-config', '--mcp-config', mcpFile, '--allowedTools', allowed, '--output-format', 'stream-json', '--verbose'];
+    if (disallowed.length) a.push('--disallowedTools', ...disallowed);
     if (model) a.push('--model', model);
     const child = spawn('claude', a.map(x => (/[\s,，、：。]/.test(x) && x !== '""' ? `"${x.replace(/"/g, '\\"')}"` : x)), { cwd: sandbox, shell: true, env: { ...process.env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '';
@@ -65,7 +86,18 @@ function runClaude(tag) {
   });
 }
 
-fs.writeFileSync(path.join(outDir, 'setup.json'), JSON.stringify({ door, runs, orders, label, task: TASK, model: model || '(default)', sandbox, mcpConfig, allowed, gates: gates() }, null, 2));
+fs.writeFileSync(path.join(outDir, 'setup.json'), JSON.stringify({ door, runs, orders, label, task: TASK, model: model || '(default)', sandbox, mcpConfig, allowed, disallowed, video: door === 'human' && video, clicksOnly, gates: gates() }, null, 2));
+
+// Playwright 錄的是 .webm；另外轉一份 .mp4（H.264）方便剪輯。沒有 ffmpeg 就只留 webm。
+function convertVideos(dir, tag) {
+  if (!fs.existsSync(dir)) return;
+  const webms = fs.readdirSync(dir).filter(f => f.endsWith('.webm'));
+  webms.forEach((f, i) => {
+    const out = path.join(outDir, `${tag}${webms.length > 1 ? `-${i + 1}` : ''}.mp4`);
+    const r = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(dir, f), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', out]);
+    if (r.status !== 0) console.log(`  （${f} 轉 mp4 失敗，webm 還在）`);
+  });
+}
 
 const results = [];
 // Ctrl+C 不會跑 finally，所以另外接住，不然 run_tag 會卡在 config/gates.json
@@ -84,6 +116,7 @@ try {
       const placed = readOrders().slice(before).filter(o => o.run_tag === tag);
       const chosen = placed[0]?.items?.[0];
       const t = parseTranscript(r.out);
+      if (door === 'human' && video) convertVideos(path.join(outDir, `${tag}-video`), tag);
       results.push({ tag, order, chosen: chosen ? `${chosen.id} ${chosen.name} ${chosen.size}` : '（沒下單）', orders_placed: placed.length, total: placed[0]?.total ?? null, wall_s: wall, steps: t.steps, errors: t.errors, tokens_in: t.tokens.input_total, tokens_out: t.tokens.output, cost_usd: t.cost_usd, model: t.model, final: t.final });
       console.log(`${tag}  ${wall}s  ${t.steps} 步 ${t.errors} 錯  → ${chosen ? `${chosen.id} ${chosen.name}` : '沒下單'}${placed.length > 1 ? `（下了 ${placed.length} 單！）` : ''}`);
     }
