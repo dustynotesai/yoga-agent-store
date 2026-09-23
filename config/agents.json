@@ -1,15 +1,15 @@
 {
   "owners": {
     "dustin": {
-      "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQrmSLKmTt5qTO5PNybbdeP67WFxmlx5u/tMpOn3/ueI=\n-----END PUBLIC KEY-----\n",
-      "registered": "2026-09-23T05:35:57.786Z"
+      "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA5ZC/XzfOwI9Y+NFw/fe0yWzokSHD6AmLdKCM9BFndfY=\n-----END PUBLIC KEY-----\n",
+      "registered": "2026-09-23T05:40:21.871Z"
     }
   },
   "agents": {
     "dustin-agent": {
       "owner": "dustin",
-      "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQINfGap7phQ/r8azIFkkCqtdiAj3qLB7u+XoWyKeglU=\n-----END PUBLIC KEY-----\n",
-      "registered": "2026-09-23T05:35:57.786Z"
+      "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAPpxZl6N7hRmgWJupwZo0Oyyuz085SeVSyzzLOZJ3AUU=\n-----END PUBLIC KEY-----\n",
+      "registered": "2026-09-23T05:40:21.872Z"
     }
   }
 }
