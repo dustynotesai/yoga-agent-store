@@ -10,7 +10,8 @@
     "gates": "node scripts/gates.js",
     "agent": "node scripts/agent-demo.js",
     "tokens": "node scripts/tokens.js",
-    "experiment": "node scripts/experiment.js"
+    "experiment": "node scripts/experiment.js",
+    "label": "node scripts/label.js"
   },
   "keywords": [],
   "author": "",
