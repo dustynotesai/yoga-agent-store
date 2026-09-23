@@ -25,7 +25,7 @@ function logResponse(req, res, body, extra = {}) {
   const t = tokens(body);
   res.setHeader('x-tokens', t);
   appendLog(FILES.requestsLog, {
-    door: req.path.startsWith('/agent') ? 'agent' : 'human',
+    door: req.originalUrl.startsWith('/agent') ? 'agent' : 'human',
     method: req.method, path: req.originalUrl, status: res.statusCode,
     bytes: Buffer.byteLength(body), tokens: t,
     ua: req.get('user-agent') || '', accept: req.get('accept') || '',
