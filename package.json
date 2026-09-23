@@ -1,0 +1,26 @@
+{
+  "name": "yoga-agent-store",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "start": "node src/server.js",
+    "mcp": "node src/mcp.js",
+    "keygen": "node scripts/keygen.js",
+    "mandate": "node scripts/mandate.js",
+    "gates": "node scripts/gates.js",
+    "agent": "node scripts/agent-demo.js",
+    "tokens": "node scripts/tokens.js",
+    "experiment": "node scripts/experiment.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "private": "true",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "express": "^5.2.1",
+    "gpt-tokenizer": "^4.0.0",
+    "zod": "^4.6.5"
+  }
+}
