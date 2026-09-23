@@ -1,8 +1,9 @@
 {
   "name": "yoga-agent-store",
   "version": "1.0.0",
-  "description": "",
+  "description": "A fictional yoga store by DustyNoteAI: one catalog, a human storefront, and an authenticated AI agent checkout.",
   "scripts": {
+    "test": "node --test",
     "start": "node src/server.js",
     "mcp": "node src/mcp.js",
     "keygen": "node scripts/keygen.js",
@@ -14,14 +15,22 @@
     "label": "node scripts/label.js"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "DustyNoteAI (Dustin Lin)",
+  "license": "MIT",
   "type": "module",
-  "private": "true",
+  "private": true,
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "express": "^5.2.1",
     "gpt-tokenizer": "^4.0.0",
     "zod": "^4.6.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dustynotesai/yoga-agent-store.git"
+  },
+  "homepage": "https://github.com/dustynotesai/yoga-agent-store#readme",
+  "bugs": {
+    "url": "https://github.com/dustynotesai/yoga-agent-store/issues"
   }
 }

@@ -10,6 +10,7 @@ import { checkMandate } from './mandate.js';
 import { charge } from './payment.js';
 import * as store from './store.js';
 import * as V from './views.js';
+import { filterCatalog } from './presentation.js';
 
 const PORT = +(process.env.PORT || 4242);
 const app = express();
@@ -52,32 +53,72 @@ function sendHtml(req, res, html, md) {
 app.use(express.static(p('public')));
 
 app.get('/', (req, res) => {
-  const category = req.query.category || '';
-  const { items } = store.catalog(category ? { category } : {});
-  sendHtml(req, res, V.homePage({ items, category }), V.homeMarkdown({ items, category }));
+  const category = ['yoga-pants', 'yoga-top'].includes(req.query.category) ? req.query.category : '';
+  const { items: allItems } = store.catalog();
+  const { items, filters } = filterCatalog(category ? allItems.filter(x => x.category === category) : allItems, req.query);
+  const counts = { all: allItems.length, pants: allItems.filter(x => x.category === 'yoga-pants').length, tops: allItems.filter(x => x.category === 'yoga-top').length };
+  sendHtml(req, res, V.homePage({ items, category, filters, counts }), V.homeMarkdown({ items, category }));
 });
 app.get('/about', (req, res) => sendHtml(req, res, V.aboutPage(), '# 品牌故事\n\n虛構的瑜珈服品牌，為了一支影片而存在。\n'));
 app.get('/products/:id', (req, res) => {
   const x = store.getProduct(req.params.id);
-  if (!x) { res.status(404); return sendHtml(req, res, V.aboutPage(), '# 404\n'); }
+  if (!x) { res.status(404); return sendHtml(req, res, V.notFoundPage(), '# 404\n'); }
   sendHtml(req, res, V.productPage(x), V.productMarkdown(x));
 });
-app.get('/checkout', (req, res) => sendHtml(req, res, V.checkoutPage({}), '# 購物車是空的\n'));
+// Keep the existing single-item checkout, but retain the selected item across pages.
+const humanSession = req => {
+  const id = (req.get('cookie') || '').match(/(?:^|;\s*)mf_bag=(cs_[a-f0-9]{12})(?:;|$)/)?.[1];
+  const session = id && store.getSession(id);
+  return session?.door === 'human' ? session : null;
+};
+const paying = new Set();
+app.use('/checkout', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.get('/checkout', (req, res) => {
+  const session = humanSession(req);
+  const line = session?.status === 'ready_for_complete' ? session.items[0] : null;
+  sendHtml(req, res, V.checkoutPage(line ? { product: store.getProduct(line.id), size: line.size, buyer: session.buyer } : {}));
+});
 app.post('/checkout', (req, res) => {
   const product = store.getProduct(req.body.id);
   const size = req.body.size;
-  if (!product || !size) { res.status(400); return sendHtml(req, res, V.checkoutPage({ product, size, error: '請先選尺寸' })); }
-  sendHtml(req, res, V.checkoutPage({ product, size }));
+  if (!product) { res.status(404); return sendHtml(req, res, V.notFoundPage()); }
+  if (!Object.hasOwn(product.sizes, size) || product.sizes[size] <= 0) {
+    res.status(400); return sendHtml(req, res, V.productPage(product, { error: '請選擇有現貨的尺寸，再前往結帳。' }));
+  }
+  const session = store.createSession({ items: [{ id: product.id, size, quantity: 1 }], door: 'human' });
+  if (session.error) { res.status(400); return sendHtml(req, res, V.productPage(product, { error: session.hint })); }
+  res.cookie('mf_bag', session.id, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 4 * 60 * 60 * 1000 });
+  res.redirect(303, '/checkout');
 });
 app.post('/checkout/complete', async (req, res) => {
-  const { id, size, name, address, phone, card } = req.body;
-  const product = store.getProduct(id);
-  const s = store.createSession({ items: [{ id, size, quantity: 1 }], buyer: { name, address, phone }, door: 'human' });
-  if (s.error) { res.status(400); return sendHtml(req, res, V.checkoutPage({ product, size, error: s.hint })); }
-  const pay = await charge({ amount: s.totals.total, token: card ? 'tok_visa' : '', description: `human ${s.id}` });
-  if (!pay.ok) { res.status(402); return sendHtml(req, res, V.checkoutPage({ product, size, error: pay.hint })); }
-  const done = store.completeSession(s.id, { payment: pay });
-  sendHtml(req, res, V.donePage(done.order));
+  const s = humanSession(req);
+  if (s?.status === 'completed') return sendHtml(req, res, V.donePage(s.order));
+  if (!s || s.status !== 'ready_for_complete') {
+    res.status(400); return sendHtml(req, res, V.checkoutPage({ error: '購物袋已過期，請重新選擇商品。' }));
+  }
+  const line = s.items[0];
+  const product = store.getProduct(line.id);
+  const buyer = Object.fromEntries(['name', 'address', 'phone'].map(key => [key, typeof req.body[key] === 'string' ? req.body[key].trim().slice(0, key === 'address' ? 300 : 100) : '']));
+  const fail = (error, status = 400) => { res.status(status); return sendHtml(req, res, V.checkoutPage({ product, size: line.size, buyer, error })); };
+  if (req.body.id !== line.id || req.body.size !== line.size) return fail('商品選擇已變更，請確認購物袋後再送出。');
+  if (Object.values(buyer).some(value => !value)) return fail('請完整填寫姓名、電話與地址。');
+  if (String(req.body.card || '').replace(/[\s-]/g, '') !== '4242424242424242') return fail('請使用測試卡號 4242 4242 4242 4242。');
+  if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(req.body.exp || '') || !/^\d{3,4}$/.test(req.body.cvc || '')) return fail('請填寫有效格式的到期年月（如 12/28）與 CVC。');
+  if (paying.has(s.id)) return fail('這筆訂單正在處理，請稍後查看購物袋。', 409);
+  const updated = store.updateSession(s.id, { buyer });
+  if (updated.error) return fail(updated.hint);
+  paying.add(s.id);
+  try {
+    const pay = await charge({ amount: s.totals.total, token: 'tok_visa', description: `human ${s.id}` });
+    if (!pay.ok) return fail(pay.hint, 402);
+    const done = store.completeSession(s.id, { payment: pay });
+    if (done.error) return fail(done.hint, 409);
+    sendHtml(req, res, V.donePage(done.order));
+  } catch {
+    return fail('付款服務暫時無法連線，請稍後再試。', 502);
+  } finally {
+    paying.delete(s.id);
+  }
 });
 
 // ───────────── 店的自我介紹（給 agent 看的） ─────────────
