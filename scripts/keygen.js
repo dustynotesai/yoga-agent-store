@@ -2,7 +2,7 @@
 import { FILES, readJson, writeJson } from '../src/paths.js';
 import { generateKeyPair } from '../src/auth.js';
 
-const ownerId = process.argv[2] || 'dustin';
+const ownerId = process.argv[2] || 'dustynotes';
 const agentId = process.argv[3] || `${ownerId}-agent`;
 
 const owner = generateKeyPair();

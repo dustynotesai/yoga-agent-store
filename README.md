@@ -1,10 +1,14 @@
 # Mountain Flow Yoga — 一間有兩個門的店
 
-Built by **[DustyNoteAI](https://github.com/dustynotesai)** · [MIT License](LICENSE)
+Built by **[DustyNotes](https://github.com/dustynotesai)** · [MIT License](LICENSE)
+
+**[直接打開體驗店](https://dustynotesai.github.io/yoga-agent-store/)** · [觀眾操作指南](docs/VIEWER-GUIDE.md) · [EP06 實驗結果](experiments/RESULTS.md)
+
+公開網站可瀏覽、篩選、選尺寸與完成模擬訂單，使用示範收件資料，不需要信用卡。GitHub Pages 版只在瀏覽器運作；下方的本機 Node 版才包含 MCP 與四道伺服器驗證。
 
 一個能實際操作的 agent commerce 示範專案：同一份商品目錄，一邊是人類逛的瑜珈服店，一邊是 AI agent 使用的 JSON／MCP 結帳介面。
 
-![Mountain Flow Yoga storefront by DustyNoteAI](docs/storefront-preview.png)
+![Mountain Flow Yoga storefront by DustyNotes](docs/storefront-preview.png)
 
 ## 店面更新
 
@@ -13,9 +17,9 @@ Built by **[DustyNoteAI](https://github.com/dustynotesai)** · [MIT License](LIC
 - 人類店面支援名稱／顏色搜尋、現貨尺寸、價格上限、口袋篩選與排序。原本的商品資料及 agent 授權機制維持共用。
 - 單件購物袋透過 HttpOnly cookie 保留選擇四小時；重新啟動伺服器會清除記憶體中的購物袋與 session。
 - 測試結帳使用 `4242 4242 4242 4242`、到期 `12/28`、CVC `123`。請使用虛構收件資料。重複送出已完成的訂單不會再次扣庫存。
-- `npm test` 驗證篩選條件、庫存選項、商品資訊與所有圖片檔案。
+- `npm test` 驗證店面、身分簽章、授權與預算、付款模式及金額單位、非法數量、庫存保留與重複付款。測試使用暫存金鑰及紀錄，不動既有實驗資料，也不連 Stripe。
 
-這是一間**虛構的瑜珈服測試商店**，由 **DustyNoteAI** 為一支影片打造：
+這是一間**虛構的瑜珈服測試商店**，由 **DustyNotes** 為一支影片打造：
 **如果網站以後不是做給人看的，那要做給誰看、怎麼做？**
 
 同一份商品資料，開了兩個門：
@@ -27,9 +31,9 @@ Built by **[DustyNoteAI](https://github.com/dustynotesai)** · [MIT License](LIC
 | 進門要什麼 | 什麼都不用 | **四道門**：身分（簽章）、授權（你簽的紙）、預算（上限）、付款（測試卡） |
 | 同一個網址 | `Accept: text/html` 回 HTML | `Accept: text/markdown` 回 markdown（Cloudflare Markdown for Agents 的做法），header 帶兩個 token 數 |
 
-商品跟評價都是編的。付款預設是模擬，給 `STRIPE_SECRET_KEY`（sk_test）就走 Stripe 測試模式，一樣不會扣真的錢。
+商品跟評價都是編的。付款預設是模擬，設定 `STRIPE_SECRET_KEY`（`sk_test_`）才走 Stripe 測試模式。其他金鑰會被拒絕；只支援整數 TWD，送 Stripe 前轉成百分之一元的單位。
 
-## 三個指令就開店
+## 快速開始
 
 需要 Node.js 20 以上版本。先下載或 clone 本專案，再進入專案資料夾執行：
 
@@ -44,7 +48,7 @@ npm start                                        # http://localhost:4242
 
 只想瀏覽店面，可直接 `npm install`、`npm start`。`keygen` 與 `mandate` 是 agent 介面所需的設定。
 
-`npm run keygen` 會在本機產生 `keys/` 與 `config/agents.json`；這些檔案不會提交到 Git。空白登記範例在 `config/agents.example.json`。
+`npm run keygen` 預設產生 owner `dustynotes`、agent `dustynotes-agent`，存到 `keys/` 與 `config/agents.json`；這些檔案不會提交到 Git。空白登記範例在 `config/agents.example.json`。已有金鑰仍可使用；重跑 keygen 會替換本機鑰匙，之後必須重簽 mandate。
 
 另開一個視窗：
 
@@ -72,6 +76,8 @@ npm run gates -- all on          # 全開
 
 被擋的時候回應會說是哪一道：`{"error":"over_budget","hint":"金額 1490 超過授權上限 1200","door":"budget"}`。
 
+這是教學用的協定概念示範，未宣稱與表中服務正式整合或通過認證。預算是每筆上限，非累積支出限制。session 與庫存留在單一程序記憶體；不支援正式付款、跨程序或重啟後的付款復原。
+
 ## 讓 Claude Code 走進來
 
 repo 裡的 `.mcp.json` 已經登記了兩個 MCP：`yoga-store`（agent 門）跟 `playwright`（拿來走人類門）。
@@ -85,15 +91,31 @@ repo 裡的 `.mcp.json` 已經登記了兩個 MCP：`yoga-store`（agent 門）�
 - 人類門：「用 playwright 打開 http://localhost:4242 …」
 - agent 門：「用 yoga-store 的工具 …」
 
+想跑「先列三件 → 我選一件 → 看明細 → 回覆確認 → 付款」，直接用 [操作指南](docs/VIEWER-GUIDE.md) 的提示。等待確認是 AI 的互動指示，和伺服器驗證已簽的 mandate 分開。
+
 ## 實驗
 
-完整的實驗設計在 [`experiments/PROTOCOL.md`](experiments/PROTOCOL.md)。B3／B4（換順序、加標籤，各跑 N 次）有現成的跑法：
+方法與重跑指令在 [`experiments/PROTOCOL.md`](experiments/PROTOCOL.md)；歷史結果、限制及 70 次逐次摘要見 [`experiments/RESULTS.md`](experiments/RESULTS.md)。換順序的例子：
 
 ```bash
 npm run experiment -- --runs 10 --orders original,reversed,random
 ```
 
 每一次都是真的開一個 `claude -p` 走 MCP 後門，結果在 `experiments/runs/` 跟 `logs/orders.jsonl`。
+
+## GitHub Pages
+
+```bash
+npm run build:pages
+npm run preview:pages
+# http://127.0.0.1:4243/yoga-agent-store/
+```
+
+`dist/` 只包含店面 HTML、瀏覽器程式、商品資料與圖片，不包含金鑰、紀錄或 Node 後端。網站從 `gh-pages` 分支發布；更新 main 不會自動改動網站。
+
+維護者先用 GitHub CLI 登入對應帳號，再執行 `npm run deploy:pages`：它會跑測試、建置，在暫存 checkout 更新 `gh-pages` 並推送，不需要 Actions workflow 權限。首次發布後，在 Settings → Pages 選「Deploy from a branch」、`gh-pages`、`/ (root)`。Fork 或自訂預覽路徑可設定 `BASE_PATH`（預設 `/yoga-agent-store/`）。
+
+本機測試需要隔離資料時，可將 `YOGA_STORE_STATE_DIR` 指向含 `data/products.json` 的另一個資料夾；設定、金鑰與紀錄會寫入該處，靜態圖片仍取自專案 `public/`。
 
 ## 檔案
 
@@ -117,6 +139,6 @@ token 數是用 OpenAI 的 tokenizer（gpt-tokenizer）估的，Claude 的實際
 
 ## 授權與作者
 
-由 **[DustyNoteAI](https://github.com/dustynotesai)**（Dustin Lin）製作，以 [MIT License](LICENSE) 開源。歡迎 fork、修改與用來學習；使用或散布時請保留 LICENSE 中的版權與授權聲明。
+由 **[DustyNotes](https://github.com/dustynotesai)**（Dustin Lin）製作，以 [MIT License](LICENSE) 開源。歡迎 fork、修改與用來學習；使用或散布時請保留 LICENSE 中的版權與授權聲明。
 
 商品圖片使用 AI 生成，提示詞保留於 [`docs/product-image-prompts.md`](docs/product-image-prompts.md)。這是一個供本機學習與實驗的示範專案，不是正式收款或出貨的電商系統。

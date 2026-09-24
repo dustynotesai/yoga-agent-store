@@ -3,20 +3,23 @@
 //   /agent/*     agent 門：JSON、五個 checkout endpoint（OpenAI ACP 的形狀）、簽章驗證
 //   /.well-known/agent-store.json  告訴 agent 這間店有哪些門（UCP 的 profile 形狀）
 import express from 'express';
+import { pathToFileURL } from 'node:url';
 import { encode } from 'gpt-tokenizer';
 import { FILES, p, readJson, writeJson, appendLog, gates } from './paths.js';
 import { verifyRequest } from './auth.js';
 import { checkMandate } from './mandate.js';
 import { charge } from './payment.js';
+import { checkout } from './checkout.js';
 import * as store from './store.js';
 import * as V from './views.js';
 import { filterCatalog } from './presentation.js';
 
-const PORT = +(process.env.PORT || 4242);
+export function createApp({ chargePayment = charge } = {}) {
 const app = express();
 app.disable('x-powered-by');
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); } }));
+app.use((req, _res, next) => { req.body ??= {}; next(); });
 
 const tokens = s => encode(String(s)).length;
 const agents = () => readJson(FILES.agents, { owners: {}, agents: {} });
@@ -71,11 +74,10 @@ const humanSession = req => {
   const session = id && store.getSession(id);
   return session?.door === 'human' ? session : null;
 };
-const paying = new Set();
 app.use('/checkout', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.get('/checkout', (req, res) => {
   const session = humanSession(req);
-  const line = session?.status === 'ready_for_complete' ? session.items[0] : null;
+  const line = ['ready_for_complete', 'payment_pending'].includes(session?.status) ? session.items[0] : null;
   sendHtml(req, res, V.checkoutPage(line ? { product: store.getProduct(line.id), size: line.size, buyer: session.buyer } : {}));
 });
 app.post('/checkout', (req, res) => {
@@ -93,7 +95,7 @@ app.post('/checkout', (req, res) => {
 app.post('/checkout/complete', async (req, res) => {
   const s = humanSession(req);
   if (s?.status === 'completed') return sendHtml(req, res, V.donePage(s.order));
-  if (!s || s.status !== 'ready_for_complete') {
+  if (!s || !['ready_for_complete', 'payment_pending'].includes(s.status)) {
     res.status(400); return sendHtml(req, res, V.checkoutPage({ error: '購物袋已過期，請重新選擇商品。' }));
   }
   const line = s.items[0];
@@ -104,21 +106,13 @@ app.post('/checkout/complete', async (req, res) => {
   if (Object.values(buyer).some(value => !value)) return fail('請完整填寫姓名、電話與地址。');
   if (String(req.body.card || '').replace(/[\s-]/g, '') !== '4242424242424242') return fail('請使用測試卡號 4242 4242 4242 4242。');
   if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(req.body.exp || '') || !/^\d{3,4}$/.test(req.body.cvc || '')) return fail('請填寫有效格式的到期年月（如 12/28）與 CVC。');
-  if (paying.has(s.id)) return fail('這筆訂單正在處理，請稍後查看購物袋。', 409);
-  const updated = store.updateSession(s.id, { buyer });
-  if (updated.error) return fail(updated.hint);
-  paying.add(s.id);
-  try {
-    const pay = await charge({ amount: s.totals.total, token: 'tok_visa', description: `human ${s.id}` });
-    if (!pay.ok) return fail(pay.hint, 402);
-    const done = store.completeSession(s.id, { payment: pay });
-    if (done.error) return fail(done.hint, 409);
-    sendHtml(req, res, V.donePage(done.order));
-  } catch {
-    return fail('付款服務暫時無法連線，請稍後再試。', 502);
-  } finally {
-    paying.delete(s.id);
+  if (s.status === 'ready_for_complete') {
+    const updated = store.updateSession(s.id, { buyer });
+    if (updated.error) return fail(updated.hint);
   }
+  const done = await checkout(s.id, { payment: { token: 'tok_visa', description: `human ${s.id}` } }, chargePayment);
+  if (done.error) return fail(done.hint, done.retryable ? 502 : done.door === 'payment' ? 402 : 409);
+  sendHtml(req, res, V.donePage(done.order));
 });
 
 // ───────────── 店的自我介紹（給 agent 看的） ─────────────
@@ -201,32 +195,37 @@ agent.post('/checkout_sessions/:id/complete', async (req, res) => {
   const g = gates();
   const s = store.getSession(req.params.id);
   if (!s) return sendJson(req, res, { error: 'not_found' }, 404);
-  if (s.status !== 'ready_for_complete') return sendJson(req, res, { error: 'not_completable', hint: `狀態是 ${s.status}` }, 400);
+  if (!['ready_for_complete', 'payment_pending', 'completed'].includes(s.status)) return sendJson(req, res, { error: 'not_completable', hint: `狀態是 ${s.status}` }, 409);
   // 授權＋預算那兩道門
   const m = checkMandate({ envelope: req.body.mandate, agentKeyid: req.agent.keyid, categories: [...new Set(s.items.map(l => l.category))], amount: s.totals.total, agents: agents(), gates: g });
   if (!m.ok) return sendJson(req, res, { error: m.reason, hint: m.hint, door: g.budget && m.reason === 'over_budget' ? 'budget' : 'authorization' }, 403);
   // 付款那一道門
-  let pay = { ok: true, provider: 'skipped' };
-  if (g.payment) {
-    pay = await charge({ amount: s.totals.total, token: req.body.payment_data?.token, description: `agent ${s.id}` });
-    if (!pay.ok) return sendJson(req, res, { error: pay.reason, hint: pay.hint, door: 'payment' }, 402);
-  }
-  const done = store.completeSession(s.id, { keyid: req.agent.keyid, mandate_id: m.mandate_id || null, payment: pay });
-  if (done.error) return sendJson(req, res, done, 409);
+  const done = await checkout(s.id, {
+    payment: g.payment ? { token: req.body.payment_data?.token, description: `agent ${s.id}` } : null,
+    extra: { keyid: req.agent.keyid, mandate_id: m.mandate_id || null },
+  }, chargePayment);
+  if (done.error) return sendJson(req, res, done, done.retryable ? 502 : done.door === 'payment' ? 402 : 409);
   sendJson(req, res, done);
 });
 app.use('/agent', agent);
 
 // ───────────── 只有本機能碰的管理端 ─────────────
 const local = (req, res, next) => (['::1', '127.0.0.1', '::ffff:127.0.0.1'].includes(req.ip) ? next() : res.status(403).end());
-app.post('/admin/reset', local, (req, res) => { store.resetStock(); res.json({ ok: true }); });
+app.post('/admin/reset', local, (req, res) => { const result = store.resetStock(); res.status(result.error ? 409 : 200).json(result); });
 app.get('/admin/gates', local, (req, res) => res.json(gates()));
 app.post('/admin/gates', local, (req, res) => { const g = { ...gates(), ...req.body }; writeJson(FILES.gates, g); res.json(g); });
 
-app.listen(PORT, () => {
+return app;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+const PORT = +(process.env.PORT || 4242);
+createApp().listen(PORT, () => {
   const g = gates();
   console.log(`Mountain Flow Yoga · http://localhost:${PORT}`);
   console.log(`  人類門  http://localhost:${PORT}/`);
   console.log(`  agent 門 http://localhost:${PORT}/agent/products   （自我介紹 /.well-known/agent-store.json）`);
-  console.log(`  四道門  身分=${g.identity ? '開' : '關'} 授權=${g.mandate ? '開' : '關'} 預算=${g.budget ? '開' : '關'} 付款=${g.payment ? '開' : '關'}  目錄順序=${g.order}${process.env.STRIPE_SECRET_KEY ? '  付款=Stripe 測試模式' : '  付款=模擬'}`);
+  const mode = !process.env.STRIPE_SECRET_KEY ? '模擬' : process.env.STRIPE_SECRET_KEY.startsWith('sk_test_') ? 'Stripe 測試模式' : '金鑰無效，付款將拒絕';
+  console.log(`  四道門  身分=${g.identity ? '開' : '關'} 授權=${g.mandate ? '開' : '關'} 預算=${g.budget ? '開' : '關'} 付款=${g.payment ? '開' : '關'}  目錄順序=${g.order}  付款=${mode}`);
 });
+}

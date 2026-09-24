@@ -1,6 +1,6 @@
 // 目錄、庫存、結帳 session、訂單。兩個門共用同一份資料——這是重點。
 import crypto from 'node:crypto';
-import { FILES, readJson, writeJson, appendLog, gates } from './paths.js';
+import { FILES, readJson, appendLog, gates } from './paths.js';
 
 let products = readJson(FILES.products);
 const sessions = new Map();
@@ -38,19 +38,26 @@ export function agentView(x) {
   };
 }
 
-export function createSession({ items, buyer, door }) {
+export function createSession({ items, buyer, door } = {}) {
+  if (!Array.isArray(items) || !items.length) return { error: 'empty', hint: '購物車必須是非空商品陣列' };
   const lines = [];
-  for (const it of items || []) {
+  for (const it of items) {
+    if (!it || typeof it !== 'object') return { error: 'invalid_item', hint: '商品格式不正確' };
     const pr = getProduct(it.id);
     if (!pr) return { error: 'unknown_product', hint: `沒有 ${it.id} 這件商品` };
     const size = it.size;
-    if (!(size in pr.sizes)) return { error: 'unknown_size', hint: `${pr.name} 沒有 ${size} 號` };
-    const qty = it.quantity || 1;
-    if (pr.sizes[size] < qty) return { error: 'out_of_stock', hint: `${pr.name} ${size} 號缺貨` };
+    if (typeof size !== 'string' || !Object.hasOwn(pr.sizes, size)) return { error: 'unknown_size', hint: `${pr.name} 沒有這個尺寸` };
+    const qty = it.quantity === undefined ? 1 : it.quantity;
+    if (!Number.isSafeInteger(qty) || qty <= 0) return { error: 'invalid_quantity', hint: '數量必須是正整數' };
+    const existing = lines.find(l => l.id === pr.id && l.size === size);
+    const quantity = qty + (existing?.quantity || 0);
+    if (!Number.isSafeInteger(quantity) || pr.sizes[size] < quantity) return { error: 'out_of_stock', hint: `${pr.name} ${size} 號缺貨` };
+    if (existing) { existing.quantity = quantity; existing.subtotal = pr.price * quantity; continue; }
     lines.push({ id: pr.id, name: pr.name, category: pr.category, size, quantity: qty, unit_price: pr.price, subtotal: pr.price * qty });
   }
   if (!lines.length) return { error: 'empty', hint: '購物車是空的' };
   const total = lines.reduce((a, l) => a + l.subtotal, 0);
+  if (!Number.isSafeInteger(total) || total <= 0) return { error: 'invalid_total' };
   const s = {
     id: 'cs_' + crypto.randomBytes(6).toString('hex'),
     status: 'ready_for_complete',
@@ -66,11 +73,11 @@ export function createSession({ items, buyer, door }) {
 
 export const getSession = id => sessions.get(id) || null;
 
-export function updateSession(id, { items, buyer }) {
+export function updateSession(id, { items, buyer } = {}) {
   const s = sessions.get(id);
   if (!s) return { error: 'not_found' };
   if (s.status !== 'ready_for_complete') return { error: 'not_editable', hint: `session 狀態是 ${s.status}` };
-  const next = createSession({ items: items || s.items.map(l => ({ id: l.id, size: l.size, quantity: l.quantity })), buyer: buyer || s.buyer, door: s.door });
+  const next = createSession({ items: items === undefined ? s.items.map(l => ({ id: l.id, size: l.size, quantity: l.quantity })) : items, buyer: buyer || s.buyer, door: s.door });
   if (next.error) return next;
   sessions.delete(next.id);
   Object.assign(s, next, { id: s.id });
@@ -80,19 +87,36 @@ export function updateSession(id, { items, buyer }) {
 export function cancelSession(id) {
   const s = sessions.get(id);
   if (!s) return { error: 'not_found' };
+  if (!['ready_for_complete', 'canceled'].includes(s.status)) return { error: 'not_cancelable', hint: `session 狀態是 ${s.status}` };
   s.status = 'canceled';
   return s;
 }
 
-export function completeSession(id, extra) {
+export function beginCompletion(id) {
   const s = sessions.get(id);
   if (!s) return { error: 'not_found' };
+  if (s.status === 'payment_pending') { s.status = 'processing'; return s; }
   if (s.status !== 'ready_for_complete') return { error: 'not_completable', hint: `session 狀態是 ${s.status}` };
   for (const l of s.items) {
     const pr = getProduct(l.id);
     if (pr.sizes[l.size] < l.quantity) return { error: 'out_of_stock', hint: `${pr.name} ${l.size} 號剛好賣完` };
   }
   for (const l of s.items) getProduct(l.id).sizes[l.size] -= l.quantity; // 只扣記憶體，POST /admin/reset 會還原
+  s.status = 'processing';
+  return s;
+}
+
+export function paymentFailed(id, uncertain = false) {
+  const s = sessions.get(id);
+  if (s?.status !== 'processing') return;
+  if (!uncertain) for (const l of s.items) getProduct(l.id).sizes[l.size] += l.quantity;
+  s.status = uncertain ? 'payment_pending' : 'ready_for_complete';
+}
+
+export function completeSession(id, extra) {
+  const s = sessions.get(id);
+  if (!s) return { error: 'not_found' };
+  if (s.status !== 'processing') return { error: 'not_completable', hint: `session 狀態是 ${s.status}` };
   s.status = 'completed';
   s.order = { id: 'ord_' + crypto.randomBytes(6).toString('hex'), ...extra, completed: new Date().toISOString() };
   const g = gates();
@@ -107,5 +131,7 @@ export function completeSession(id, extra) {
 }
 
 export function resetStock() {
+  if ([...sessions.values()].some(s => ['processing', 'payment_pending'].includes(s.status))) return { error: 'payment_in_progress' };
   products = readJson(FILES.products);
+  return { ok: true };
 }

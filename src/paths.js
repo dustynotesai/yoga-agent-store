@@ -4,16 +4,18 @@ import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const p = (...xs) => path.join(ROOT, ...xs);
+// Isolate demos/tests without touching an existing key registry or experiment logs.
+const state = (...xs) => path.join(process.env.YOGA_STORE_STATE_DIR || ROOT, ...xs);
 
 export const FILES = {
-  products: p('data', 'products.json'),
-  gates: p('config', 'gates.json'),
-  agents: p('config', 'agents.json'),
-  ownerKey: p('keys', 'owner.json'),
-  agentKey: p('keys', 'agent.json'),
-  mandate: p('keys', 'mandate.json'),
-  requestsLog: p('logs', 'requests.jsonl'),
-  ordersLog: p('logs', 'orders.jsonl'),
+  products: state('data', 'products.json'),
+  gates: state('config', 'gates.json'),
+  agents: state('config', 'agents.json'),
+  ownerKey: state('keys', 'owner.json'),
+  agentKey: state('keys', 'agent.json'),
+  mandate: state('keys', 'mandate.json'),
+  requestsLog: state('logs', 'requests.jsonl'),
+  ordersLog: state('logs', 'orders.jsonl'),
 };
 
 export function readJson(file, fallback) {

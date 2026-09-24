@@ -27,6 +27,7 @@ export function checkMandate({ envelope, agentKeyid, categories, amount, agents,
   const owner = agents.owners?.[mandate.owner_keyid];
   if (!owner) return { ok: false, reason: 'unknown_owner', hint: `店裡沒有登記 owner=${mandate.owner_keyid}` };
   if (!verifyObject(mandate, signature, owner.public_key_pem)) return { ok: false, reason: 'mandate_signature_invalid', hint: '授權書的簽名對不上' };
+  if (!Number.isFinite(Date.parse(mandate.expires)) || !Array.isArray(mandate.allowed_categories) || !Number.isSafeInteger(mandate.max_amount) || mandate.max_amount < 0) return { ok: false, reason: 'invalid_mandate', hint: '授權書欄位不完整或格式錯誤' };
   if (new Date(mandate.expires) < new Date()) return { ok: false, reason: 'mandate_expired', hint: '授權書過期' };
   if (gates.mandate) {
     if (mandate.agent_keyid !== agentKeyid) return { ok: false, reason: 'mandate_wrong_agent', hint: `授權書是給 ${mandate.agent_keyid}，敲門的是 ${agentKeyid}` };

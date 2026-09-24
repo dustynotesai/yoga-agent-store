@@ -48,7 +48,7 @@ function layout(
   <nav aria-label="主要導覽"><a href="/#collection" ${active === 'home' ? 'aria-current="page"' : ''}>全部商品</a><a href="/?category=yoga-pants#collection" ${active === 'pants' ? 'aria-current="page"' : ''}>瑜珈褲</a><a href="/?category=yoga-top#collection" ${active === 'top' ? 'aria-current="page"' : ''}>上衣</a><a href="/about" ${active === 'about' ? 'aria-current="page"' : ''}>關於山流</a></nav>
   <div class="nav-actions"><a href="/#search" class="icon-link" aria-label="搜尋商品">${searchIcon}</a><a class="icon-link" href="/checkout" aria-label="購物袋">${bag}</a></div></header>
   ${body}
-  <footer class="foot"><div class="footer-top"><div class="footer-brand"><a class="brand" href="/">${mountain}<span>mountain flow<small>YOGA & EVERYDAY</small></span></a><a class="creator-credit" href="https://github.com/dustynotesai">Built by <span>DustyNoteAI</span> <span aria-hidden="true">↗</span></a></div><p>練習，是回到自己的路。<br><span class="muted">Find a little room to move.</span></p><div class="footer-links"><a href="/#collection">探索商品 ${arrow}</a><a href="/about">關於山流 ${arrow}</a></div></div>
+  <footer class="foot"><div class="footer-top"><div class="footer-brand"><a class="brand" href="/">${mountain}<span>mountain flow<small>YOGA & EVERYDAY</small></span></a><a class="creator-credit" href="https://github.com/dustynotesai">Built by <span>DustyNotes</span> <span aria-hidden="true">↗</span></a></div><p>練習，是回到自己的路。<br><span class="muted">Find a little room to move.</span></p><div class="footer-links"><a href="/#collection">探索商品 ${arrow}</a><a href="/about">關於山流 ${arrow}</a></div></div>
   <div class="footer-bottom"><span>© 2026 Mountain Flow Yoga · Taipei</span><span>虛構品牌體驗商店 · 商品、圖片與評價為示意 · 付款為測試模式</span><a href="/.well-known/agent-store.json">Agent 入口 ↗</a></div></footer></body></html>`;
 }
 
@@ -167,7 +167,7 @@ export function donePage(order) {
 export function aboutPage() {
   return layout(
     '關於山流',
-    `<main id="main" class="wrap about-page"><div class="about-copy"><p class="eyebrow">OUR LITTLE PRACTICE</p><h1>練習，<br>是回到自己的路。</h1><p class="hero-en">Find your own flow.</p><p>Mountain Flow 山流，是由 <a class="creator-name" href="https://github.com/dustynotesai">DustyNoteAI</a> 為影片打造的虛構瑜珈服品牌。我們把一間店做成兩種體驗：讓人透過畫面與文字挑選，也讓 AI 透過結構化資料找到商品。</p><p>你正在逛的是給人的那扇門。這裡的商品、圖片和評價都是示意，結帳使用測試模式，不會實際扣款或出貨。</p><a class="btn" href="/#collection">探索日常系列 ${arrow}</a></div><img class="about-image" src="/images/studio-hero.webp" width="1536" height="1024" alt="溫暖安靜的瑜珈練習空間"></main>`,
+    `<main id="main" class="wrap about-page"><div class="about-copy"><p class="eyebrow">OUR LITTLE PRACTICE</p><h1>練習，<br>是回到自己的路。</h1><p class="hero-en">Find your own flow.</p><p>Mountain Flow 山流，是由 <a class="creator-name" href="https://github.com/dustynotesai">DustyNotes</a> 為影片打造的虛構瑜珈服品牌。我們把一間店做成兩種體驗：讓人透過畫面與文字挑選，也讓 AI 透過結構化資料找到商品。</p><p>你正在逛的是給人的那扇門。這裡的商品、圖片和評價都是示意，結帳使用測試模式，不會實際扣款或出貨。</p><a class="btn" href="/#collection">探索日常系列 ${arrow}</a></div><img class="about-image" src="/images/studio-hero.webp" width="1536" height="1024" alt="溫暖安靜的瑜珈練習空間"></main>`,
     { active: 'about' },
   );
 }
