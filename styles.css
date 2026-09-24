@@ -706,6 +706,15 @@ a:hover {
   line-height: 2;
   margin: 0;
 }
+.creator-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-top: 18px;
+}
+.creator-links .creator-credit {
+  margin-top: 0;
+}
 .creator-credit {
   display: inline-flex;
   align-items: center;
