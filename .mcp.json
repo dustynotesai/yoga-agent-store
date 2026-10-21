@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "yoga-store": {
+      "command": "node",
+      "args": ["src/mcp.js"],
+      "env": { "STORE_URL": "http://localhost:4242" }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    }
+  }
+}
